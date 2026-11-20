@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ambient Vinyl Widget for Notion</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans KR', 'sans-serif'],
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* 노션 라이트모드 전용 순수 화이트 배경 및 스크롤바 스타일 */
+    html, body {
+      background-color: #FFFFFF;
+      color: #37352F;
+      margin: 0;
+      padding: 0;
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(55, 53, 47, 0.16);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(55, 53, 47, 0.32);
+    }
+
+    /* Container Query 지원: 위젯 가로/세로 비율에 따른 내부 요소 유동 배치 */
+    #widget-card {
+      container-type: size;
+      container-name: widget;
+      background-color: #FFFFFF;
+    }
+
+    /* 레코드판 데크가 위젯 가로/세로 축소 시 비율을 유지하며 자연스럽게 줄어들도록 설정 */
+    #turntable-deck {
+      width: min(100%, 205px, calc(100cqh - 52px));
+      height: auto;
+      aspect-ratio: 1 / 1;
+    }
+
+    /* 위젯이 세로로 길거나 좁아질 때 상하 배치로 자동 전환 */
+    @container widget (max-width: 440px) {
+      .widget-body-grid {
+        flex-direction: column;
+        overflow-y: auto;
+      }
+      .turntable-pane {
+        width: 100% !important;
+        min-width: 0 !important;
+        border-right: none !important;
+        border-bottom: 1px solid #E9E9E7;
+        padding-top: 8px;
+        padding-bottom: 8px;
+      }
+      #turntable-deck {
+        width: min(55%, 160px, calc(42cqh));
+      }
+      .controls-pane {
+        width: 100% !important;
+        min-height: 110px;
+      }
+    }
+
+    /* 컴팩트 높이 대응 */
+    @container widget (max-height: 270px) {
+      .track-desc-text {
+        display: none;
+      }
+      .turntable-pane {
+        padding-top: 4px;
+        padding-bottom: 4px;
+      }
+    }
+
+    /* 초슬림 세로 높이 대응 (140px ~ 210px 구간) */
+    @container widget (max-height: 210px) {
+      .widget-header {
+        padding-top: 4px;
+        padding-bottom: 4px;
+      }
+      .control-top-pad {
+        padding-top: 6px;
+        padding-bottom: 6px;
+      }
+      .volume-row {
+        margin-top: 4px;
+      }
+      .track-list-header {
+        display: none;
+      }
+      #turntable-deck {
+        width: min(100%, 140px, calc(100cqh - 38px));
+        padding: 4px;
+      }
+    }
+
+    /* LP 레코드판 트랙 홈(Groove) 및 광택 질감 */
+    .vinyl-grooves {
+      background:
+        radial-gradient(circle at center, transparent 28%, rgba(255,255,255,0.04) 29%, transparent 30%),
+        repeating-radial-gradient(
+          circle at center,
+          #18181B 0px,
+          #18181B 2px,
+          #242429 3px,
+          #18181B 4px
+        );
+    }
+
+    .vinyl-sheen {
+      background: conic-gradient(
+        from 45deg,
+        transparent 0deg,
+        rgba(255, 255, 255, 0.16) 35deg,
+        transparent 70deg,
+        transparent 180deg,
+        rgba(255, 255, 255, 0.14) 215deg,
+        transparent 250deg,
+        transparent 360deg
+      );
+    }
+
+    /* 레코드판 회전 애니메이션 */
+    .vinyl-spinning {
+      animation: vinylRotate 7.5s linear infinite;
+    }
+    .vinyl-paused {
+      animation: vinylRotate 7.5s linear infinite;
+      animation-play-state: paused;
+    }
+
+    @keyframes vinylRotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    /* 톤암(바늘) 부드러운 회전 전환 */
+    .tonearm-transition {
+      transition: transform 0.65s cubic-bezier(0.34, 1.56, 0.64, 1);
+      transform-origin: 76% 14%;
+    }
+
+    /* 커스텀 볼륨 슬라이더 */
+    input[type="range"].notion-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+    }
+    input[type="range"].notion-slider::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 9999px;
+    }
+    input[type="range"].notion-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #37352F;
+      margin-top: -4.5px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+      transition: transform 0.15s ease;
+    }
+    input[type="range"].notion-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.18);
+    }
+
+    /* 사운드 이퀄라이저 바 애니메이션 */
+    @keyframes eqBar {
+      0%, 100% { height: 25%; }
+      50% { height: 95%; }
+    }
+    .eq-active .bar-1 { animation: eqBar 0.9s ease-in-out infinite; }
+    .eq-active .bar-2 { animation: eqBar 0.65s ease-in-out infinite 0.2s; }
+    .eq-active .bar-3 { animation: eqBar 0.8s ease-in-out infinite 0.4s; }
+    .eq-active .bar-4 { animation: eqBar 0.7s ease-in-out infinite 0.1s; }
+  </style>
+</head>
+<body class="min-h-screen w-full flex items-center justify-center p-2 sm:p-4 bg-[#FFFFFF] text-[#37352F] select-none overflow-auto">
+
+  <!-- 직사각형 크기 조절 가능 메인 위젯 컨테이너 (테두리 및 그림자 제거) -->
+  <main id="widget-card"
+    style="width: 600px; height: 340px;"
+    class="relative flex flex-col rounded-2xl border-0 shadow-none bg-[#FFFFFF] overflow-hidden max-w-full max-h-[95vh]">
+
+    <!-- 상단 헤더: 라이브 상태 배지 & 크기 고정 토글 버튼 -->
+    <header class="widget-header shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-[#E9E9E7] bg-[#FFFFFF]">
+      <div class="flex items-center gap-2 min-w-0">
+        <!-- 라이브 이퀄라이저 인디케이터 -->
+        <div id="eq-indicator" class="flex items-end gap-[2px] h-3.5 w-4 text-[#0F7B6C] shrink-0">
+          <span class="bar-1 w-[2.5px] h-1 bg-current rounded-full transition-all"></span>
+          <span class="bar-2 w-[2.5px] h-2 bg-current rounded-full transition-all"></span>
+          <span class="bar-3 w-[2.5px] h-1.5 bg-current rounded-full transition-all"></span>
+          <span class="bar-4 w-[2.5px] h-1 bg-current rounded-full transition-all"></span>
+        </div>
+        <span id="status-badge" class="text-[11px] font-semibold tracking-wider uppercase text-[#787774] truncate">
+          대기 중 • LP AMBIENT
+        </span>
+      </div>
+
+      <!-- 우측: 크기 안내 배지 및 크기 고정 토글 버튼 -->
+      <div class="flex items-center gap-2 shrink-0">
+        <span id="size-readout" class="hidden text-[11px] font-mono px-2 py-0.5 rounded-md bg-[#F7F6F3] text-[#787774] border border-[#E9E9E7]">
+          600 × 340 px
+        </span>
+
+        <button id="lock-size-btn" type="button" title="현재 위젯 가로/세로 크기 고정 또는 조절 해제"
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border border-[#E9E9E7] bg-[#F7F6F3] text-[#37352F] hover:bg-[#EFEFED] active:scale-[0.98] transition-all">
+          <!-- Unlocked Icon -->
+          <svg id="icon-unlocked" class="w-3.5 h-3.5 text-[#787774]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+          </svg>
+          <!-- Locked Icon -->
+          <svg id="icon-locked" class="w-3.5 h-3.5 text-[#37352F] hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span id="lock-btn-label">크기 고정</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 메인 직사각형 바디: 좌측 턴테이블 + 우측 컨트롤 및 트랙 리스트 -->
+    <div class="widget-body-grid flex-1 flex flex-row min-h-0 overflow-hidden">
+
+      <!-- 좌측 영역: LP 턴테이블 데크 -->
+      <section class="turntable-pane w-[44%] min-w-[120px] shrink-0 flex flex-col items-center justify-center p-3 sm:p-4 border-r border-[#E9E9E7] bg-[#FFFFFF]">
+        <!-- 컨테이너 크기에 맞춰 비율 유지하며 스케일링되는 턴테이블 박스 -->
+        <div id="turntable-deck"
+          class="relative rounded-2xl bg-[#F7F6F3] border border-[#E9E9E7] shadow-inner flex items-center justify-center p-2.5 sm:p-3 cursor-pointer group"
+          title="클릭하여 재생 / 일시정지">
+
+          <!-- 회전하는 LP 디스크 -->
+          <div id="vinyl-disc"
+            class="relative w-full h-full rounded-full vinyl-grooves vinyl-paused shadow-lg border border-black/80 flex items-center justify-center transition-shadow duration-300 group-hover:shadow-xl">
+            <!-- 빛 반사 광택 -->
+            <div class="absolute inset-0 rounded-full vinyl-sheen pointer-events-none"></div>
+            <!-- 미세 트랙 링 -->
+            <div class="absolute inset-[7%] rounded-full border border-white/10 pointer-events-none"></div>
+            <div class="absolute inset-[16%] rounded-full border border-white/5 pointer-events-none"></div>
+
+            <!-- 중앙 종이 라벨 -->
+            <div id="vinyl-label"
+              class="relative w-[38%] h-[38%] rounded-full bg-sky-500 flex flex-col items-center justify-center shadow-inner border border-white/30 transition-colors duration-500">
+              <span id="vinyl-emoji" class="text-lg sm:text-xl leading-none drop-shadow-xs">🌧️</span>
+              <span class="text-[6px] font-bold tracking-widest uppercase text-white/95 mt-0.5">33⅓ RPM</span>
+              <!-- 중앙 스핀들 구멍 -->
+              <div class="absolute w-[16%] h-[16%] rounded-full bg-[#F7F6F3] border border-black/30 shadow-inner"></div>
+            </div>
+          </div>
+
+          <!-- 톤암 (바늘 팔) SVG -->
+          <div id="tonearm" class="tonearm-transition absolute -top-1 -right-1 w-[44%] h-[76%] pointer-events-none z-10" style="transform: rotate(-28deg);">
+            <svg viewBox="0 0 100 170" class="w-full h-full drop-shadow-sm">
+              <!-- 피벗 베이스 -->
+              <circle cx="76" cy="24" r="14" fill="#E6E5E0" stroke="#A8A7A2" stroke-width="2" />
+              <circle cx="76" cy="24" r="7" fill="#5A5852" />
+              <!-- 카운터웨이트 -->
+              <rect x="70" y="4" width="12" height="10" rx="2" fill="#37352F" />
+              <!-- 톤암 파이프 -->
+              <path d="M76 24 L76 92 L54 134" fill="none" stroke="#9B9A97" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M76 24 L76 92 L54 134" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              <!-- 헤드셸 & 카트리지 -->
+              <g transform="translate(54, 134) rotate(28)">
+                <rect x="-5" y="0" width="10" height="18" rx="2" fill="#37352F" />
+                <rect x="-2" y="16" width="4" height="5" rx="1" fill="#E03E3E" />
+              </g>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- 우측 영역: 현재 트랙 정보 + 재생/볼륨 컨트롤 + 10종 사운드 리스트 -->
+      <section class="controls-pane flex-1 flex flex-col min-w-0 min-h-0 bg-[#FFFFFF]">
+
+        <!-- 상단 컨트롤 패드 (트랙 제목, 재생 버튼, 볼륨 슬라이더) -->
+        <div class="control-top-pad shrink-0 px-4 pt-3 pb-2.5 border-b border-[#E9E9E7]">
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span id="track-number" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#F7F6F3] text-[#787774] border border-[#E9E9E7] shrink-0">01/20</span>
+                <h1 id="track-title" class="text-sm sm:text-base font-bold tracking-tight text-[#37352F] truncate">잔잔한 봄비</h1>
+              </div>
+              <p id="track-desc" class="track-desc-text text-[11px] text-[#787774] mt-0.5 truncate">
+                창밖을 적시는 차분하고 일정한 빗방울 소리
+              </p>
+            </div>
+
+            <!-- 재생 컨트롤 버튼 그룹 -->
+            <div class="flex items-center gap-1 shrink-0">
+              <button id="prev-btn" type="button" title="이전 사운드"
+                class="p-1.5 rounded-lg text-[#787774] hover:text-[#37352F] hover:bg-[#F7F6F3] active:scale-95 transition-all">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+                </svg>
+              </button>
+
+              <button id="play-btn" type="button" title="재생 / 일시정지 (Space)"
+                class="w-9 h-9 rounded-full bg-[#37352F] text-[#FFFFFF] flex items-center justify-center shadow-xs hover:opacity-90 active:scale-95 transition-all">
+                <svg id="icon-play" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+                <svg id="icon-pause" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                </svg>
+              </button>
+
+              <button id="next-btn" type="button" title="다음 사운드"
+                class="p-1.5 rounded-lg text-[#787774] hover:text-[#37352F] hover:bg-[#F7F6F3] active:scale-95 transition-all">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- 마스터 볼륨 바 -->
+          <div class="volume-row mt-2.5 flex items-center gap-2">
+            <button id="mute-btn" type="button" title="음소거 전환" class="text-[#787774] hover:text-[#37352F] transition-colors shrink-0">
+              <svg id="icon-vol-high" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+              </svg>
+              <svg id="icon-vol-mute" class="w-3.5 h-3.5 hidden text-[#E03E3E]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <line x1="23" y1="9" x2="17" y2="15"></line>
+                <line x1="17" y1="9" x2="23" y2="15"></line>
+              </svg>
+            </button>
+
+            <input id="volume-slider" type="range" min="0" max="100" value="70"
+              class="notion-slider flex-1 bg-[#E9E9E7] h-[4px] rounded-full" />
+
+            <span id="volume-value" class="text-[10px] font-mono w-7 text-right text-[#787774] shrink-0">70%</span>
+          </div>
+        </div>
+
+        <!-- 하단: 20종 자연의 소리 트랙 리스트 (남은 세로 공간을 모두 채우며 스크롤) -->
+        <div class="flex-1 flex flex-col min-h-0 bg-[#FFFFFF]">
+          <div class="track-list-header shrink-0 px-4 py-1.5 flex items-center justify-between text-[10px] font-medium text-[#787774] border-b border-[#F7F6F3]">
+            <span>자연의 소리 트랙 (20)</span>
+            <span>끊김 없는 무한 루프</span>
+          </div>
+          <div id="track-list" class="flex-1 overflow-y-auto px-2 py-1.5 space-y-0.5">
+            <!-- JS에서 20개 트랙 버튼 동적 렌더링 -->
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 3방향 인터랙티브 드래그 앤 드롭 크기 조절 핸들 (크기 고정 시 자동 숨김) -->
+    <!-- 1. 우측 가장자리 핸들 (가로 너비 조절) -->
+    <div id="resize-handle-right" data-resize-dir="right" title="드래그하여 가로(너비) 크기 조절"
+      class="resize-handle group absolute top-3 bottom-5 right-0 w-3 cursor-ew-resize flex items-center justify-center z-20">
+      <div class="w-[3px] h-8 rounded-full bg-[#E9E9E7] group-hover:bg-[#9B9A97] transition-colors"></div>
+    </div>
+
+    <!-- 2. 하단 가장자리 핸들 (세로 높이 조절) -->
+    <div id="resize-handle-bottom" data-resize-dir="bottom" title="드래그하여 세로(높이) 크기 조절"
+      class="resize-handle group absolute left-3 right-5 bottom-0 h-3 cursor-ns-resize flex items-center justify-center z-20">
+      <div class="h-[3px] w-8 rounded-full bg-[#E9E9E7] group-hover:bg-[#9B9A97] transition-colors"></div>
+    </div>
+
+    <!-- 3. 우측 하단 모서리 핸들 (가로·세로 대각선 동시 조절) -->
+    <div id="resize-handle-corner" data-resize-dir="corner" title="드래그하여 가로·세로 크기 동시 조절"
+      class="resize-handle absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end p-1.5 text-[#9B9A97] hover:text-[#37352F] transition-colors z-30">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <path d="M14 6L6 14" />
+        <path d="M14 10.5L10.5 14" />
+      </svg>
+    </div>
+  </main>
+
+  <script>
+    /**
+     * ============================================================================
+     * 1. 20종 자연의 소리 트랙 데이터 (각기 다른 자연 환경과 고유 음향 설계)
+     * ============================================================================
+     */
+    const TRACKS = [
+      {
+        id: 'gentle-rain',
+        title: '잔잔한 봄비',
+        desc: '창밖을 적시는 차분하고 일정한 빗방울 소리',
+        emoji: '🌧️',
+        color: '#0EA5E9'
+      },
+      {
+        id: 'thunderstorm',
+        title: '폭풍우와 천둥',
+        desc: '굵은 빗줄기와 멀리서 울리는 나지막한 천둥소리',
+        emoji: '⛈️',
+        color: '#4F46E5'
+      },
+      {
+        id: 'rain-on-tent',
+        title: '텐트 위 빗방울',
+        desc: '방수 천막 위로 톡톡 튀며 떨어지는 아늑한 빗소리',
+        emoji: '⛺',
+        color: '#0369A1'
+      },
+      {
+        id: 'forest-wind',
+        title: '깊은 숲속 바람',
+        desc: '울창한 나뭇잎 사이를 스쳐 지나가는 산들바람',
+        emoji: '🍃',
+        color: '#16A34A'
+      },
+      {
+        id: 'bamboo-forest',
+        title: '대나무 숲 바람 소리',
+        desc: '대나무 줄기가 서로 부딪히며 속삭이는 청량한 바람',
+        emoji: '🎋',
+        color: '#15803D'
+      },
+      {
+        id: 'alpine-blizzard',
+        title: '설산의 겨울 눈보라',
+        desc: '고산 지대 능선을 휘몰아치는 깊고 웅장한 겨울 바람',
+        emoji: '❄️',
+        color: '#3B82F6'
+      },
+      {
+        id: 'campfire',
+        title: '모닥불 장작 타는 소리',
+        desc: '따뜻한 온기와 타닥타닥 장작이 타들어가는 소리',
+        emoji: '🔥',
+        color: '#EA580C'
+      },
+      {
+        id: 'ocean-waves',
+        title: '잔잔한 파도 소리',
+        desc: '해변으로 밀려왔다 잔잔히 부서지는 파도 소리',
+        emoji: '🌊',
+        color: '#0284C7'
+      },
+      {
+        id: 'pebble-beach',
+        title: '몽돌 해변 파도 소리',
+        desc: '파도가 빠질 때 둥근 자갈들이 또르르 구르는 해변 소리',
+        emoji: '🪨',
+        color: '#475569'
+      },
+      {
+        id: 'deep-underwater',
+        title: '깊은 바닷속 물결',
+        desc: '고요한 심해의 먹먹한 수압과 부드러운 해류 울림',
+        emoji: '🐋',
+        color: '#1D4ED8'
+      },
+      {
+        id: 'babbling-brook',
+        title: '계곡 물 흐르는 소리',
+        desc: '계곡 돌틈 사이로 맑게 졸졸 흐르는 시냇물 소리',
+        emoji: '🏞️',
+        color: '#0D9488'
+      },
+      {
+        id: 'waterfall',
+        title: '웅장한 숲속 폭포수',
+        desc: '절벽 아래로 시원하게 쏟아져 내리는 폭포 물보라 소리',
+        emoji: '💦',
+        color: '#0891B2'
+      },
+      {
+        id: 'night-crickets',
+        title: '여름밤 풀벌레 소리',
+        desc: '고요한 여름밤 풀숲에서 들려오는 귀뚜라미 합창',
+        emoji: '🦗',
+        color: '#7C3AED'
+      },
+      {
+        id: 'summer-cicadas',
+        title: '한여름 매미 울음소리',
+        desc: '햇살 가득한 7월 숲속의 정겨운 매미 합창 소리',
+        emoji: '🌳',
+        color: '#65A30D'
+      },
+      {
+        id: 'pond-frogs',
+        title: '비 온 뒤 연못 개구리',
+        desc: '촉촉한 밤 연못가에서 들려오는 개구리들의 이중주',
+        emoji: '🐸',
+        color: '#059669'
+      },
+      {
+        id: 'morning-birds',
+        title: '이른 아침 산새 소리',
+        desc: '이슬 맺힌 고요한 아침 숲속을 깨우는 산새 소리',
+        emoji: '🐦',
+        color: '#D97706'
+      },
+      {
+        id: 'night-owl',
+        title: '깊은 밤 숲속 부엉이',
+        desc: '달빛 비치는 고요한 밤숲에서 울리는 부엉이 소리',
+        emoji: '🦉',
+        color: '#5B21B6'
+      },
+      {
+        id: 'seagulls-harbor',
+        title: '바닷가 갈매기와 파도',
+        desc: '선착장의 잔물결 위로 멀리 울려 퍼지는 갈매기 소리',
+        emoji: '🕊️',
+        color: '#0EA5E9'
+      },
+      {
+        id: 'cave-droplets',
+        title: '동굴 속 물방울 소리',
+        desc: '고요한 동굴 천장에서 맑게 울려 퍼지는 물방울 낙수음',
+        emoji: '💧',
+        color: '#2563EB'
+      },
+      {
+        id: 'pink-breeze',
+        title: '갈대밭 핑크 노이즈 바람',
+        desc: '깊은 집중과 휴식을 돕는 포근하고 부드러운 핑크 노이즈 바람',
+        emoji: '🌬️',
+        color: '#64748B'
+      }
+    ];
+
+    /**
+     * ============================================================================
+     * 2. Web Audio API 기반 끊김 없는 무한 루프 자연의 소리 합성 엔진 (20종 개별 설계)
+     * ============================================================================
+     */
+    class AmbientSoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.masterGain = null;
+        this.currentNodes = [];
+        this.currentTimers = [];
+        this.volume = 0.7;
+        this.isMuted = false;
+      }
+
+      initContext() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioCtx();
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.value = this.isMuted ? 0 : this.volume;
+          this.masterGain.connect(this.ctx.destination);
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      createNoiseBuffer(type = 'pink', seconds = 6) {
+        const sampleRate = this.ctx.sampleRate;
+        const length = sampleRate * seconds;
+        const buffer = this.ctx.createBuffer(1, length, sampleRate);
+        const data = buffer.getChannelData(0);
+
+        if (type === 'white') {
+          for (let i = 0; i < length; i++) {
+            data[i] = Math.random() * 2 - 1;
+          }
+        } else if (type === 'pink') {
+          let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+          for (let i = 0; i < length; i++) {
+            const white = Math.random() * 2 - 1;
+            b0 = 0.99886 * b0 + white * 0.0555179;
+            b1 = 0.99332 * b1 + white * 0.0750759;
+            b2 = 0.96900 * b2 + white * 0.1538520;
+            b3 = 0.86650 * b3 + white * 0.3104856;
+            b4 = 0.55000 * b4 + white * 0.5329522;
+            b5 = -0.7616 * b5 - white * 0.0168980;
+            data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.045;
+            b6 = white * 0.115926;
+          }
+        } else if (type === 'brown') {
+          let lastOut = 0.0;
+          for (let i = 0; i < length; i++) {
+            const white = Math.random() * 2 - 1;
+            data[i] = (lastOut + 0.02 * white) / 1.02;
+            lastOut = data[i];
+            data[i] *= 2.8;
+          }
+        }
+
+        // 루프 경계면 클릭음 방지를 위한 크로스페이드 블렌딩
+        const fadeSamples = Math.floor(sampleRate * 0.1);
+        for (let i = 0; i < fadeSamples; i++) {
+          const ratio = i / fadeSamples;
+          data[i] = data[i] * ratio + data[length - fadeSamples + i] * (1 - ratio);
+        }
+        return buffer;
+      }
+
+      createLoopSource(type = 'pink', seconds = 6) {
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.createNoiseBuffer(type, seconds);
+        src.loop = true;
+        src.start();
+        return src;
+      }
+
+      stopCurrent(fadeTime = 0.35) {
+        this.currentTimers.forEach(t => clearInterval(t));
+        this.currentTimers = [];
+
+        const oldNodes = [...this.currentNodes];
+        this.currentNodes = [];
+
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+
+        oldNodes.forEach(item => {
+          try {
+            if (item.gain) {
+              item.gain.gain.cancelScheduledValues(now);
+              item.gain.gain.setValueAtTime(item.gain.gain.value, now);
+              item.gain.gain.linearRampToValueAtTime(0.0001, now + fadeTime);
+            }
+            setTimeout(() => {
+              try {
+                if (item.source && item.source.stop) item.source.stop();
+                if (item.source && item.source.disconnect) item.source.disconnect();
+                if (item.gain && item.gain.disconnect) item.gain.disconnect();
+              } catch (e) {}
+            }, fadeTime * 1000 + 60);
+          } catch (e) {}
+        });
+      }
+
+      playTrack(trackId) {
+        this.initContext();
+        this.stopCurrent(0.3);
+
+        const now = this.ctx.currentTime;
+        const trackGain = this.ctx.createGain();
+        trackGain.gain.setValueAtTime(0.001, now);
+        trackGain.gain.linearRampToValueAtTime(1.0, now + 0.45);
+        trackGain.connect(this.masterGain);
+
+        const registerNode = (source, extraGain = null) => {
+          this.currentNodes.push({ source, gain: extraGain || trackGain });
+        };
+
+        switch (trackId) {
+          case 'gentle-rain': {
+            const src = this.createLoopSource('pink', 7);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 1100;
+            filter.Q.value = 0.55;
+            src.connect(filter);
+            filter.connect(trackGain);
+            registerNode(src);
+            break;
+          }
+
+          case 'thunderstorm': {
+            const rain = this.createLoopSource('pink', 7);
+            const rainFilter = this.ctx.createBiquadFilter();
+            rainFilter.type = 'lowpass';
+            rainFilter.frequency.value = 1500;
+            rain.connect(rainFilter);
+            rainFilter.connect(trackGain);
+            registerNode(rain);
+
+            const rumble = this.createLoopSource('brown', 8);
+            const rumbleFilter = this.ctx.createBiquadFilter();
+            rumbleFilter.type = 'lowpass';
+            rumbleFilter.frequency.value = 130;
+            const rumbleGain = this.ctx.createGain();
+            rumbleGain.gain.value = 0.35;
+            rumble.connect(rumbleFilter);
+            rumbleFilter.connect(rumbleGain);
+            rumbleGain.connect(trackGain);
+            registerNode(rumble, rumbleGain);
+
+            const thunderTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              rumbleGain.gain.cancelScheduledValues(t);
+              rumbleGain.gain.setValueAtTime(0.35, t);
+              rumbleGain.gain.linearRampToValueAtTime(1.05, t + 0.7);
+              rumbleGain.gain.exponentialRampToValueAtTime(0.35, t + 4.8);
+            }, 9500);
+            this.currentTimers.push(thunderTimer);
+            break;
+          }
+
+          case 'rain-on-tent': {
+            // 텐트 천막에 부딪히는 공명감 있는 빗소리 + 개별 톡톡 빗방울 타격음
+            const tentRain = this.createLoopSource('pink', 6);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 1850;
+            filter.Q.value = 1.6;
+            const bedGain = this.ctx.createGain();
+            bedGain.gain.value = 0.65;
+            tentRain.connect(filter);
+            filter.connect(bedGain);
+            bedGain.connect(trackGain);
+            registerNode(tentRain, bedGain);
+
+            const patTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const count = 2 + Math.floor(Math.random() * 3);
+              for (let i = 0; i < count; i++) {
+                const start = t + Math.random() * 0.16;
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                osc.type = 'triangle';
+                const f = 520 + Math.random() * 480;
+                osc.frequency.setValueAtTime(f, start);
+                osc.frequency.exponentialRampToValueAtTime(f * 0.45, start + 0.035);
+                g.gain.setValueAtTime(0.001, start);
+                g.gain.linearRampToValueAtTime(0.08 + Math.random() * 0.06, start + 0.005);
+                g.gain.exponentialRampToValueAtTime(0.0001, start + 0.04);
+                osc.connect(g);
+                g.connect(trackGain);
+                osc.start(start);
+                osc.stop(start + 0.045);
+              }
+            }, 190);
+            this.currentTimers.push(patTimer);
+            break;
+          }
+
+          case 'forest-wind': {
+            const src = this.createLoopSource('pink', 8);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 420;
+            filter.Q.value = 1.4;
+
+            const lfo = this.ctx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.14;
+            const lfoGain = this.ctx.createGain();
+            lfoGain.gain.value = 210;
+            lfo.connect(lfoGain);
+            lfoGain.connect(filter.frequency);
+            lfo.start();
+
+            src.connect(filter);
+            filter.connect(trackGain);
+            registerNode(src);
+            registerNode(lfo);
+            break;
+          }
+
+          case 'bamboo-forest': {
+            // 청량한 고역대 나뭇잎 스침 + 대나무 마디가 부딪히는 목탁/목재 공명음
+            const leaves = this.createLoopSource('white', 7);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 2300;
+            filter.Q.value = 2.2;
+            const leafGain = this.ctx.createGain();
+            leafGain.gain.value = 0.22;
+
+            const lfo = this.ctx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.22;
+            const lfoGain = this.ctx.createGain();
+            lfoGain.gain.value = 0.14;
+            lfo.connect(lfoGain);
+            lfoGain.connect(leafGain.gain);
+            lfo.start();
+
+            leaves.connect(filter);
+            filter.connect(leafGain);
+            leafGain.connect(trackGain);
+            registerNode(leaves, leafGain);
+            registerNode(lfo);
+
+            const knockTimer = setInterval(() => {
+              if (!this.ctx || Math.random() < 0.35) return;
+              const t = this.ctx.currentTime;
+              const osc = this.ctx.createOscillator();
+              const g = this.ctx.createGain();
+              osc.type = 'sine';
+              const pitch = 340 + Math.random() * 190;
+              osc.frequency.setValueAtTime(pitch, t);
+              osc.frequency.exponentialRampToValueAtTime(pitch * 0.88, t + 0.08);
+              g.gain.setValueAtTime(0.0001, t);
+              g.gain.linearRampToValueAtTime(0.09, t + 0.008);
+              g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+              osc.connect(g);
+              g.connect(trackGain);
+              osc.start(t);
+              osc.stop(t + 0.14);
+            }, 1850);
+            this.currentTimers.push(knockTimer);
+            break;
+          }
+
+          case 'alpine-blizzard': {
+            // 웅장한 저역 눈보라 + 휘파람처럼 스치는 고공 바람 하울링
+            const snow = this.createLoopSource('brown', 8);
+            const snowFilter = this.ctx.createBiquadFilter();
+            snowFilter.type = 'lowpass';
+            snowFilter.frequency.value = 390;
+            snow.connect(snowFilter);
+            snowFilter.connect(trackGain);
+            registerNode(snow);
+
+            const howl = this.createLoopSource('pink', 7);
+            const howlFilter = this.ctx.createBiquadFilter();
+            howlFilter.type = 'bandpass';
+            howlFilter.frequency.value = 680;
+            howlFilter.Q.value = 7.5;
+            const howlGain = this.ctx.createGain();
+            howlGain.gain.value = 0.25;
+
+            const lfo = this.ctx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.09;
+            const lfoGain = this.ctx.createGain();
+            lfoGain.gain.value = 260;
+            lfo.connect(lfoGain);
+            lfoGain.connect(howlFilter.frequency);
+            lfo.start();
+
+            howl.connect(howlFilter);
+            howlFilter.connect(howlGain);
+            howlGain.connect(trackGain);
+            registerNode(howl, howlGain);
+            registerNode(lfo);
+            break;
+          }
+
+          case 'campfire': {
+            const base = this.createLoopSource('brown', 6);
+            const baseFilter = this.ctx.createBiquadFilter();
+            baseFilter.type = 'lowpass';
+            baseFilter.frequency.value = 280;
+            const baseGain = this.ctx.createGain();
+            baseGain.gain.value = 0.7;
+            base.connect(baseFilter);
+            baseFilter.connect(baseGain);
+            baseGain.connect(trackGain);
+            registerNode(base, baseGain);
+
+            const crackleTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const osc = this.ctx.createOscillator();
+              const g = this.ctx.createGain();
+              const bp = this.ctx.createBiquadFilter();
+              bp.type = 'highpass';
+              bp.frequency.value = 1400;
+
+              osc.type = 'square';
+              osc.frequency.setValueAtTime(900 + Math.random() * 2400, t);
+              g.gain.setValueAtTime(0.001, t);
+              g.gain.linearRampToValueAtTime(0.18 + Math.random() * 0.2, t + 0.006);
+              g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+
+              osc.connect(bp);
+              bp.connect(g);
+              g.connect(trackGain);
+              osc.start(t);
+              osc.stop(t + 0.05);
+            }, 170);
+            this.currentTimers.push(crackleTimer);
+            break;
+          }
+
+          case 'ocean-waves': {
+            const src = this.createLoopSource('brown', 8);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 480;
+
+            const waveGain = this.ctx.createGain();
+            waveGain.gain.value = 0.55;
+
+            const lfo = this.ctx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.12;
+            const lfoGain = this.ctx.createGain();
+            lfoGain.gain.value = 0.38;
+            lfo.connect(lfoGain);
+            lfoGain.connect(waveGain.gain);
+            lfo.start();
+
+            src.connect(filter);
+            filter.connect(waveGain);
+            waveGain.connect(trackGain);
+            registerNode(src, waveGain);
+            registerNode(lfo);
+            break;
+          }
+
+          case 'pebble-beach': {
+            // 부드러운 해변 파도 + 썰물 때 자갈이 쓸려 내려가는 고주파 텍스처
+            const surf = this.createLoopSource('pink', 7);
+            const surfFilter = this.ctx.createBiquadFilter();
+            surfFilter.type = 'lowpass';
+            surfFilter.frequency.value = 720;
+            const surfGain = this.ctx.createGain();
+            surfGain.gain.value = 0.45;
+
+            const lfo = this.ctx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.15;
+            const lfoGain = this.ctx.createGain();
+            lfoGain.gain.value = 0.3;
+            lfo.connect(lfoGain);
+            lfoGain.connect(surfGain.gain);
+            lfo.start();
+
+            surf.connect(surfFilter);
+            surfFilter.connect(surfGain);
+            surfGain.connect(trackGain);
+            registerNode(surf, surfGain);
+            registerNode(lfo);
+
+            const pebbleTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const pebbles = 4 + Math.floor(Math.random() * 5);
+              for (let p = 0; p < pebbles; p++) {
+                const start = t + p * 0.055;
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1700 + Math.random() * 1400, start);
+                g.gain.setValueAtTime(0.0001, start);
+                g.gain.linearRampToValueAtTime(0.045, start + 0.008);
+                g.gain.exponentialRampToValueAtTime(0.0001, start + 0.04);
+                osc.connect(g);
+                g.connect(trackGain);
+                osc.start(start);
+                osc.stop(start + 0.045);
+              }
+            }, 3300);
+            this.currentTimers.push(pebbleTimer);
+            break;
+          }
+
+          case 'deep-underwater': {
+            // 심해의 극저역 울림 + 멀리서 울리는 고래/해류 공명
+            const sub = this.createLoopSource('brown', 8);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 165;
+            filter.Q.value = 2.4;
+
+            const lfo = this.ctx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.08;
+            const lfoGain = this.ctx.createGain();
+            lfoGain.gain.value = 55;
+            lfo.connect(lfoGain);
+            lfoGain.connect(filter.frequency);
+            lfo.start();
+
+            sub.connect(filter);
+            filter.connect(trackGain);
+            registerNode(sub);
+            registerNode(lfo);
+
+            const whaleTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const osc = this.ctx.createOscillator();
+              const g = this.ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(240, t);
+              osc.frequency.exponentialRampToValueAtTime(145, t + 1.8);
+              g.gain.setValueAtTime(0.0001, t);
+              g.gain.linearRampToValueAtTime(0.055, t + 0.5);
+              g.gain.exponentialRampToValueAtTime(0.0001, t + 2.1);
+              osc.connect(g);
+              g.connect(trackGain);
+              osc.start(t);
+              osc.stop(t + 2.2);
+            }, 6400);
+            this.currentTimers.push(whaleTimer);
+            break;
+          }
+
+          case 'babbling-brook': {
+            const src = this.createLoopSource('pink', 6);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 820;
+            filter.Q.value = 1.8;
+
+            const lfo = this.ctx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 2.4;
+            const lfoGain = this.ctx.createGain();
+            lfoGain.gain.value = 260;
+            lfo.connect(lfoGain);
+            lfoGain.connect(filter.frequency);
+            lfo.start();
+
+            src.connect(filter);
+            filter.connect(trackGain);
+            registerNode(src);
+            registerNode(lfo);
+            break;
+          }
+
+          case 'waterfall': {
+            // 풍성하고 묵직한 폭포수 백색/핑크 노이즈 레이어
+            const heavy = this.createLoopSource('brown', 7);
+            const lowFilter = this.ctx.createBiquadFilter();
+            lowFilter.type = 'lowpass';
+            lowFilter.frequency.value = 620;
+            heavy.connect(lowFilter);
+            lowFilter.connect(trackGain);
+            registerNode(heavy);
+
+            const mist = this.createLoopSource('pink', 6);
+            const mistFilter = this.ctx.createBiquadFilter();
+            mistFilter.type = 'bandpass';
+            mistFilter.frequency.value = 1650;
+            mistFilter.Q.value = 0.7;
+            const mistGain = this.ctx.createGain();
+            mistGain.gain.value = 0.45;
+            mist.connect(mistFilter);
+            mistFilter.connect(mistGain);
+            mistGain.connect(trackGain);
+            registerNode(mist, mistGain);
+            break;
+          }
+
+          case 'night-crickets': {
+            const bed = this.createLoopSource('pink', 6);
+            const bedFilter = this.ctx.createBiquadFilter();
+            bedFilter.type = 'lowpass';
+            bedFilter.frequency.value = 320;
+            const bedGain = this.ctx.createGain();
+            bedGain.gain.value = 0.35;
+            bed.connect(bedFilter);
+            bedFilter.connect(bedGain);
+            bedGain.connect(trackGain);
+            registerNode(bed, bedGain);
+
+            const cricketTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const pulses = 3 + Math.floor(Math.random() * 2);
+              for (let p = 0; p < pulses; p++) {
+                const start = t + p * 0.085;
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(4150 + Math.random() * 180, start);
+                g.gain.setValueAtTime(0.0001, start);
+                g.gain.linearRampToValueAtTime(0.065, start + 0.015);
+                g.gain.exponentialRampToValueAtTime(0.0001, start + 0.065);
+                osc.connect(g);
+                g.connect(trackGain);
+                osc.start(start);
+                osc.stop(start + 0.07);
+              }
+            }, 1450);
+            this.currentTimers.push(cricketTimer);
+            break;
+          }
+
+          case 'summer-cicadas': {
+            // 여름 숲속 배경 + FM 진동으로 합성한 매미 특유의 리드미컬 울음
+            const forest = this.createLoopSource('pink', 7);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 750;
+            const forestGain = this.ctx.createGain();
+            forestGain.gain.value = 0.32;
+            forest.connect(filter);
+            filter.connect(forestGain);
+            forestGain.connect(trackGain);
+            registerNode(forest, forestGain);
+
+            const cicadaTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const osc = this.ctx.createOscillator();
+              const mod = this.ctx.createOscillator();
+              const modGain = this.ctx.createGain();
+              const g = this.ctx.createGain();
+
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(4650, t);
+              osc.frequency.linearRampToValueAtTime(4200, t + 1.4);
+
+              mod.type = 'sine';
+              mod.frequency.value = 24;
+              modGain.gain.value = 280;
+              mod.connect(modGain);
+              modGain.connect(osc.frequency);
+
+              const bp = this.ctx.createBiquadFilter();
+              bp.type = 'bandpass';
+              bp.frequency.value = 4500;
+              bp.Q.value = 3.0;
+
+              g.gain.setValueAtTime(0.0001, t);
+              g.gain.linearRampToValueAtTime(0.045, t + 0.25);
+              g.gain.setValueAtTime(0.045, t + 1.0);
+              g.gain.exponentialRampToValueAtTime(0.0001, t + 1.55);
+
+              osc.connect(bp);
+              bp.connect(g);
+              g.connect(trackGain);
+              osc.start(t);
+              mod.start(t);
+              osc.stop(t + 1.6);
+              mod.stop(t + 1.6);
+            }, 3400);
+            this.currentTimers.push(cicadaTimer);
+            break;
+          }
+
+          case 'pond-frogs': {
+            // 고요한 밤 연못 잔물결 + 개구리 울음소리
+            const pond = this.createLoopSource('brown', 7);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 260;
+            const pondGain = this.ctx.createGain();
+            pondGain.gain.value = 0.35;
+            pond.connect(filter);
+            filter.connect(pondGain);
+            pondGain.connect(trackGain);
+            registerNode(pond, pondGain);
+
+            const frogTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const croaks = 2;
+              for (let c = 0; c < croaks; c++) {
+                const start = t + c * 0.28;
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                const bp = this.ctx.createBiquadFilter();
+                bp.type = 'bandpass';
+                bp.frequency.value = 620;
+                bp.Q.value = 2.5;
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(190, start);
+                osc.frequency.exponentialRampToValueAtTime(340, start + 0.09);
+                osc.frequency.exponentialRampToValueAtTime(210, start + 0.17);
+
+                g.gain.setValueAtTime(0.0001, start);
+                g.gain.linearRampToValueAtTime(0.075, start + 0.03);
+                g.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+
+                osc.connect(bp);
+                bp.connect(g);
+                g.connect(trackGain);
+                osc.start(start);
+                osc.stop(start + 0.19);
+              }
+            }, 2650);
+            this.currentTimers.push(frogTimer);
+            break;
+          }
+
+          case 'morning-birds': {
+            const breeze = this.createLoopSource('pink', 7);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 500;
+            filter.Q.value = 0.9;
+            const breezeGain = this.ctx.createGain();
+            breezeGain.gain.value = 0.35;
+            breeze.connect(filter);
+            filter.connect(breezeGain);
+            breezeGain.connect(trackGain);
+            registerNode(breeze, breezeGain);
+
+            const birdTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const notes = 2 + Math.floor(Math.random() * 3);
+              for (let n = 0; n < notes; n++) {
+                const s = t + n * 0.14;
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                const baseFreq = 2100 + Math.random() * 1100;
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(baseFreq, s);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.28, s + 0.06);
+                osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.95, s + 0.11);
+
+                g.gain.setValueAtTime(0.0001, s);
+                g.gain.linearRampToValueAtTime(0.075, s + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.0001, s + 0.11);
+
+                osc.connect(g);
+                g.connect(trackGain);
+                osc.start(s);
+                osc.stop(s + 0.12);
+              }
+            }, 2200);
+            this.currentTimers.push(birdTimer);
+            break;
+          }
+
+          case 'night-owl': {
+            // 밤숲의 잔잔한 공기 + 부엉이의 2음절 울음 ("부~ 부우~")
+            const nightAir = this.createLoopSource('brown', 7);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 230;
+            const airGain = this.ctx.createGain();
+            airGain.gain.value = 0.38;
+            nightAir.connect(filter);
+            filter.connect(airGain);
+            airGain.connect(trackGain);
+            registerNode(nightAir, airGain);
+
+            const owlTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const hoots = [
+                { offset: 0, dur: 0.24, freq: 390 },
+                { offset: 0.42, dur: 0.55, freq: 370 }
+              ];
+              hoots.forEach(h => {
+                const s = t + h.offset;
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(h.freq, s);
+                osc.frequency.linearRampToValueAtTime(h.freq * 0.92, s + h.dur);
+
+                g.gain.setValueAtTime(0.0001, s);
+                g.gain.linearRampToValueAtTime(0.085, s + 0.06);
+                g.gain.exponentialRampToValueAtTime(0.0001, s + h.dur);
+
+                osc.connect(g);
+                g.connect(trackGain);
+                osc.start(s);
+                osc.stop(s + h.dur + 0.02);
+              });
+            }, 4300);
+            this.currentTimers.push(owlTimer);
+            break;
+          }
+
+          case 'seagulls-harbor': {
+            // 선착장의 부드러운 물결 + 하강하는 갈매기 울음소리
+            const harbor = this.createLoopSource('pink', 7);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 540;
+            const harborGain = this.ctx.createGain();
+            harborGain.gain.value = 0.42;
+            harbor.connect(filter);
+            filter.connect(harborGain);
+            harborGain.connect(trackGain);
+            registerNode(harbor, harborGain);
+
+            const gullTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const calls = 2;
+              for (let i = 0; i < calls; i++) {
+                const s = t + i * 0.36;
+                const osc = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1450, s);
+                osc.frequency.linearRampToValueAtTime(1750, s + 0.07);
+                osc.frequency.exponentialRampToValueAtTime(920, s + 0.28);
+
+                g.gain.setValueAtTime(0.0001, s);
+                g.gain.linearRampToValueAtTime(0.06, s + 0.04);
+                g.gain.exponentialRampToValueAtTime(0.0001, s + 0.29);
+
+                osc.connect(g);
+                g.connect(trackGain);
+                osc.start(s);
+                osc.stop(s + 0.3);
+              }
+            }, 3900);
+            this.currentTimers.push(gullTimer);
+            break;
+          }
+
+          case 'cave-droplets': {
+            const amb = this.createLoopSource('brown', 7);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 210;
+            const ambGain = this.ctx.createGain();
+            ambGain.gain.value = 0.4;
+            amb.connect(filter);
+            filter.connect(ambGain);
+            ambGain.connect(trackGain);
+            registerNode(amb, ambGain);
+
+            const dropTimer = setInterval(() => {
+              if (!this.ctx) return;
+              const t = this.ctx.currentTime;
+              const osc = this.ctx.createOscillator();
+              const g = this.ctx.createGain();
+              const startFreq = 950 + Math.random() * 650;
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(startFreq, t);
+              osc.frequency.exponentialRampToValueAtTime(startFreq * 1.65, t + 0.09);
+
+              g.gain.setValueAtTime(0.0001, t);
+              g.gain.linearRampToValueAtTime(0.14, t + 0.01);
+              g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+
+              osc.connect(g);
+              g.connect(trackGain);
+              osc.start(t);
+              osc.stop(t + 0.24);
+            }, 1350);
+            this.currentTimers.push(dropTimer);
+            break;
+          }
+
+          case 'pink-breeze':
+          default: {
+            const src = this.createLoopSource('pink', 8);
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 680;
+            src.connect(filter);
+            filter.connect(trackGain);
+            registerNode(src);
+            break;
+          }
+        }
+      }
+
+      pause() {
+        this.stopCurrent(0.3);
+      }
+
+      setVolume(val) {
+        this.volume = Math.max(0, Math.min(1, val));
+        if (this.masterGain && this.ctx && !this.isMuted) {
+          this.masterGain.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.05);
+        }
+      }
+
+      setMute(muted) {
+        this.isMuted = muted;
+        if (this.masterGain && this.ctx) {
+          this.masterGain.gain.setTargetAtTime(muted ? 0 : this.volume, this.ctx.currentTime, 0.05);
+        }
+      }
+    }
+
+    /**
+     * ============================================================================
+     * 3. UI 상태, 크기 고정 & 3방향 드래그 앤 드롭 초기화
+     * ============================================================================
+     */
+    const engine = new AmbientSoundEngine();
+    let currentTrackIndex = 0;
+    let isPlaying = false;
+    let isSizeLocked = false;
+
+    const STORAGE_KEY = 'notion_ambient_vinyl_size_v2';
+    const MIN_W = 280;
+    const MIN_H = 140;
+
+    // DOM 참조
+    const widgetCard = document.getElementById('widget-card');
+    const resizeHandles = document.querySelectorAll('.resize-handle');
+    const lockSizeBtn = document.getElementById('lock-size-btn');
+    const iconUnlocked = document.getElementById('icon-unlocked');
+    const iconLocked = document.getElementById('icon-locked');
+    const lockBtnLabel = document.getElementById('lock-btn-label');
+    const sizeReadout = document.getElementById('size-readout');
+
+    const turntableDeck = document.getElementById('turntable-deck');
+    const vinylDisc = document.getElementById('vinyl-disc');
+    const vinylLabel = document.getElementById('vinyl-label');
+    const vinylEmoji = document.getElementById('vinyl-emoji');
+    const tonearm = document.getElementById('tonearm');
+
+    const trackNumberEl = document.getElementById('track-number');
+    const trackTitleEl = document.getElementById('track-title');
+    const trackDescEl = document.getElementById('track-desc');
+    const trackListEl = document.getElementById('track-list');
+
+    const playBtn = document.getElementById('play-btn');
+    const iconPlay = document.getElementById('icon-play');
+    const iconPause = document.getElementById('icon-pause');
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+
+    const volumeSlider = document.getElementById('volume-slider');
+    const volumeValue = document.getElementById('volume-value');
+    const muteBtn = document.getElementById('mute-btn');
+    const iconVolHigh = document.getElementById('icon-vol-high');
+    const iconVolMute = document.getElementById('icon-vol-mute');
+
+    const statusBadge = document.getElementById('status-badge');
+    const eqIndicator = document.getElementById('eq-indicator');
+
+    function applyLockState(locked, persist = true) {
+      isSizeLocked = locked;
+      const rect = widgetCard.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+
+      if (isSizeLocked) {
+        // 정확한 픽셀 크기로 고정
+        widgetCard.style.width = `${w}px`;
+        widgetCard.style.height = `${h}px`;
+
+        resizeHandles.forEach(el => el.classList.add('hidden', 'pointer-events-none'));
+        iconUnlocked.classList.add('hidden');
+        iconLocked.classList.remove('hidden');
+        lockBtnLabel.textContent = '크기 고정됨';
+        lockSizeBtn.classList.remove('bg-[#F7F6F3]', 'text-[#37352F]', 'border-[#E9E9E7]');
+        lockSizeBtn.classList.add('bg-[#37352F]', 'text-[#FFFFFF]', 'border-[#37352F]');
+      } else {
+        // 자유 크기 조절 모드
+        resizeHandles.forEach(el => el.classList.remove('hidden', 'pointer-events-none'));
+        iconUnlocked.classList.remove('hidden');
+        iconLocked.classList.add('hidden');
+        lockBtnLabel.textContent = '크기 고정';
+        lockSizeBtn.classList.remove('bg-[#37352F]', 'text-[#FFFFFF]', 'border-[#37352F]');
+        lockSizeBtn.classList.add('bg-[#F7F6F3]', 'text-[#37352F]', 'border-[#E9E9E7]');
+      }
+
+      if (persist) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ width: w, height: h, locked: isSizeLocked }));
+        } catch (e) {}
+      }
+    }
+
+    function loadSavedSizeState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved && typeof saved.width === 'number' && typeof saved.height === 'number') {
+          widgetCard.style.width = `${Math.max(MIN_W, saved.width)}px`;
+          widgetCard.style.height = `${Math.max(MIN_H, saved.height)}px`;
+        }
+        if (saved && typeof saved.locked === 'boolean') {
+          applyLockState(saved.locked, false);
+        }
+      } catch (e) {}
+    }
+
+    lockSizeBtn.addEventListener('click', () => {
+      applyLockState(!isSizeLocked, true);
+    });
+
+    // 3방향 드래그 앤 드롭 핸들을 이용한 가로·세로 리사이징 (마우스 & 터치 지원)
+    let isDraggingResize = false;
+    let resizeDirection = 'corner'; // 'right' | 'bottom' | 'corner'
+    let startX = 0;
+    let startY = 0;
+    let startW = 0;
+    let startH = 0;
+    let readoutHideTimer = null;
+
+    function showSizeReadout(w, h) {
+      sizeReadout.textContent = `${Math.round(w)} × ${Math.round(h)} px`;
+      sizeReadout.classList.remove('hidden');
+      clearTimeout(readoutHideTimer);
+    }
+
+    function hideSizeReadoutDelayed() {
+      clearTimeout(readoutHideTimer);
+      readoutHideTimer = setTimeout(() => {
+        sizeReadout.classList.add('hidden');
+      }, 1200);
+    }
+
+    function onResizeStart(clientX, clientY, dir) {
+      if (isSizeLocked) return;
+      isDraggingResize = true;
+      resizeDirection = dir || 'corner';
+      const rect = widgetCard.getBoundingClientRect();
+      startX = clientX;
+      startY = clientY;
+      startW = rect.width;
+      startH = rect.height;
+      showSizeReadout(startW, startH);
+
+      if (resizeDirection === 'right') {
+        document.body.style.cursor = 'ew-resize';
+      } else if (resizeDirection === 'bottom') {
+        document.body.style.cursor = 'ns-resize';
+      } else {
+        document.body.style.cursor = 'nwse-resize';
+      }
+    }
+
+    function onResizeMove(clientX, clientY) {
+      if (!isDraggingResize || isSizeLocked) return;
+      const maxW = window.innerWidth - 16;
+      const maxH = window.innerHeight - 16;
+
+      let newW = startW;
+      let newH = startH;
+
+      if (resizeDirection === 'right' || resizeDirection === 'corner') {
+        newW = Math.min(maxW, Math.max(MIN_W, startW + (clientX - startX)));
+        widgetCard.style.width = `${newW}px`;
+      }
+
+      if (resizeDirection === 'bottom' || resizeDirection === 'corner') {
+        newH = Math.min(maxH, Math.max(MIN_H, startH + (clientY - startY)));
+        widgetCard.style.height = `${newH}px`;
+      }
+
+      showSizeReadout(newW, newH);
+    }
+
+    function onResizeEnd() {
+      if (!isDraggingResize) return;
+      isDraggingResize = false;
+      document.body.style.cursor = '';
+      hideSizeReadoutDelayed();
+
+      const rect = widgetCard.getBoundingClientRect();
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          locked: isSizeLocked
+        }));
+      } catch (e) {}
+    }
+
+    resizeHandles.forEach((handle) => {
+      const dir = handle.dataset.resizeDir;
+
+      handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        onResizeStart(e.clientX, e.clientY, dir);
+      });
+
+      handle.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          e.preventDefault();
+          onResizeStart(e.touches[0].clientX, e.touches[0].clientY, dir);
+        }
+      }, { passive: false });
+    });
+
+    window.addEventListener('mousemove', (e) => onResizeMove(e.clientX, e.clientY));
+    window.addEventListener('mouseup', onResizeEnd);
+
+    window.addEventListener('touchmove', (e) => {
+      if (isDraggingResize && e.touches.length === 1) {
+        onResizeMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+    window.addEventListener('touchend', onResizeEnd);
+
+    // 트랙 UI 업데이트
+    function updateTrackUI() {
+      const track = TRACKS[currentTrackIndex];
+      const numStr = String(currentTrackIndex + 1).padStart(2, '0');
+      const totalStr = String(TRACKS.length).padStart(2, '0');
+
+      trackNumberEl.textContent = `${numStr}/${totalStr}`;
+      trackTitleEl.textContent = track.title;
+      trackDescEl.textContent = track.desc;
+      vinylEmoji.textContent = track.emoji;
+      vinylLabel.style.backgroundColor = track.color;
+
+      renderTrackList();
+    }
+
+    // 재생 상태 UI 업데이트
+    function updatePlaybackUI() {
+      if (isPlaying) {
+        vinylDisc.classList.remove('vinyl-paused');
+        vinylDisc.classList.add('vinyl-spinning');
+        tonearm.style.transform = 'rotate(-4deg)';
+        iconPlay.classList.add('hidden');
+        iconPause.classList.remove('hidden');
+        statusBadge.textContent = '재생 중 • 무한 루프';
+        statusBadge.classList.remove('text-[#787774]');
+        statusBadge.classList.add('text-[#0F7B6C]');
+        eqIndicator.classList.add('eq-active');
+      } else {
+        vinylDisc.classList.remove('vinyl-spinning');
+        vinylDisc.classList.add('vinyl-paused');
+        tonearm.style.transform = 'rotate(-28deg)';
+        iconPlay.classList.remove('hidden');
+        iconPause.classList.add('hidden');
+        statusBadge.textContent = '일시정지 • LP AMBIENT';
+        statusBadge.classList.remove('text-[#0F7B6C]');
+        statusBadge.classList.add('text-[#787774]');
+        eqIndicator.classList.remove('eq-active');
+      }
+      renderTrackList();
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        isPlaying = false;
+        engine.pause();
+      } else {
+        isPlaying = true;
+        engine.playTrack(TRACKS[currentTrackIndex].id);
+      }
+      updatePlaybackUI();
+    }
+
+    function selectTrack(index, autoPlay = true) {
+      currentTrackIndex = (index + TRACKS.length) % TRACKS.length;
+      updateTrackUI();
+      if (autoPlay) {
+        isPlaying = true;
+        engine.playTrack(TRACKS[currentTrackIndex].id);
+        updatePlaybackUI();
+      }
+    }
+
+    // 10종 트랙 리스트 렌더링
+    function renderTrackList() {
+      trackListEl.innerHTML = '';
+      TRACKS.forEach((track, idx) => {
+        const active = idx === currentTrackIndex;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left text-xs transition-all ${
+          active
+            ? 'bg-[#F7F6F3] font-semibold text-[#37352F] border border-[#E9E9E7]'
+            : 'text-[#5A5852] hover:bg-[#F7F6F3]/70 border border-transparent'
+        }`;
+
+        btn.innerHTML = `
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-sm shrink-0">${track.emoji}</span>
+            <span class="truncate">${track.title}</span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0 ml-2">
+            ${
+              active && isPlaying
+                ? '<span class="inline-block w-1.5 h-1.5 rounded-full bg-[#0F7B6C] animate-pulse"></span>'
+                : `<span class="text-[10px] font-mono text-[#9B9A97]">${String(idx + 1).padStart(2, '0')}</span>`
+            }
+          </div>
+        `;
+
+        btn.addEventListener('click', () => {
+          if (idx === currentTrackIndex) {
+            togglePlay();
+          } else {
+            selectTrack(idx, true);
+          }
+        });
+
+        trackListEl.appendChild(btn);
+      });
+    }
+
+    // 컨트롤 이벤트 바인딩
+    playBtn.addEventListener('click', togglePlay);
+    turntableDeck.addEventListener('click', togglePlay);
+    prevBtn.addEventListener('click', () => selectTrack(currentTrackIndex - 1, true));
+    nextBtn.addEventListener('click', () => selectTrack(currentTrackIndex + 1, true));
+
+    volumeSlider.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      volumeValue.textContent = `${val}%`;
+      engine.setVolume(val / 100);
+      if (val > 0 && engine.isMuted) {
+        engine.setMute(false);
+        iconVolHigh.classList.remove('hidden');
+        iconVolMute.classList.add('hidden');
+      }
+    });
+
+    muteBtn.addEventListener('click', () => {
+      const nextMute = !engine.isMuted;
+      engine.setMute(nextMute);
+      if (nextMute) {
+        iconVolHigh.classList.add('hidden');
+        iconVolMute.classList.remove('hidden');
+        volumeValue.textContent = '0%';
+      } else {
+        iconVolHigh.classList.remove('hidden');
+        iconVolMute.classList.add('hidden');
+        volumeValue.textContent = `${volumeSlider.value}%`;
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && document.activeElement.tagName !== 'BUTTON') {
+        e.preventDefault();
+        togglePlay();
+      }
+    });
+
+    // 초기화
+    loadSavedSizeState();
+    updateTrackUI();
+  </script>
+</body>
+</html>
